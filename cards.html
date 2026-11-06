@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BTF.V — Hand Toolbar</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#fbfaf7; --ink:#141414; --red:#d0202f; --line:#dcd7cd; --muted:#6e6a63;
+  --font:'Space Mono', ui-monospace, Menlo, monospace;
+  --cw:112px; --ch:160px; --vis:118px; --pivot:300px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--paper);color:var(--ink);font-family:var(--font)}
+body{display:flex;flex-direction:column;overflow:hidden}
+
+/* ── header ── */
+header{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;
+  padding:12px 24px;border-bottom:2px solid var(--ink);font-size:12px;letter-spacing:.08em}
+.brand b{font-weight:700;color:var(--red)}
+.controls{display:flex;gap:18px;flex-wrap:wrap}
+.seg{display:flex;align-items:center;gap:4px}
+.seg>span{color:var(--muted);margin-right:4px}
+.seg button,.seg a{font:inherit;background:none;color:var(--muted);border:1px solid var(--line);padding:2px 8px;cursor:pointer;letter-spacing:inherit;text-decoration:none}
+.seg button:hover:not(.on),.seg a:hover:not(.on){color:var(--ink);border-color:var(--ink)}
+.seg .on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+
+/* ── the table: the played card, full size ── */
+main{flex:1;min-height:0;overflow:auto;padding:28px 24px 8px;display:flex;flex-direction:column}
+.panel{position:relative;max-width:900px;width:100%;flex:1 0 auto;align-content:start;background:var(--paper);overflow:hidden;
+  border:var(--bw) solid var(--edge);border-radius:var(--prad);padding:28px 30px 30px;display:grid;gap:16px}
+.panel::before{content:'';position:absolute;inset:6px;border:var(--fw) var(--fs) var(--fc);opacity:.45;border-radius:max(0px,calc(var(--prad) - 5px));pointer-events:none}
+.panel.away{visibility:hidden}
+.phead{display:flex;justify-content:space-between;font-size:11px;letter-spacing:.14em;color:var(--sc);font-weight:700}
+/* playing-card details on the info box: a big watermark pip and the mirrored corner index */
+.pip{position:absolute;right:34px;bottom:-34px;font-size:220px;line-height:1;color:var(--sc);opacity:.07;pointer-events:none}
+.corner{position:absolute;right:16px;bottom:14px;transform:rotate(180deg);font-size:13px;font-weight:700;line-height:1.1;text-align:center;color:var(--sc);pointer-events:none}
+
+/* ── suits: same system, small differences ──
+   spades   black · tight corners · heavy 3px edge · fine solid frame
+   clubs    black · rounded · dotted frame
+   hearts   red   · soft round corners · double frame
+   diamonds red   · square corners · dashed frame                    */
+.s-spades  {--sc:var(--ink);--edge:var(--ink);--rad:5px; --prad:6px; --bw:3px;--fs:solid; --fc:var(--ink);--fw:1px}
+.s-clubs   {--sc:var(--ink);--edge:var(--ink);--rad:12px;--prad:20px;--bw:2px;--fs:dotted;--fc:var(--ink);--fw:2px}
+.s-hearts  {--sc:var(--red);--edge:var(--red);--rad:16px;--prad:30px;--bw:2px;--fs:double;--fc:var(--red);--fw:4px}
+.s-diamonds{--sc:var(--red);--edge:var(--red);--rad:1px; --prad:2px; --bw:2px;--fs:dashed;--fc:var(--red);--fw:1px}
+.panel h1{font-size:34px;letter-spacing:.04em;line-height:1.1;min-height:1.1em}
+.panel .sub{font-size:14px;max-width:60ch}
+.stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));border-top:1px solid var(--line);border-left:1px solid var(--line)}
+.stat{padding:10px 12px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);display:grid;gap:4px}
+.stat span{font-size:10px;color:var(--muted);letter-spacing:.14em}
+.stat b{font-size:16px}
+.stat b.r{color:var(--red)}
+.panel .body{font-size:13px;line-height:1.7;color:var(--muted);max-width:64ch}
+.ln{opacity:0;animation:arrive .4s cubic-bezier(.2,.8,.2,1) forwards}
+@keyframes arrive{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+
+/* ── the stage: the hand ── */
+.stage{position:relative;flex:none;height:180px;overflow:clip}
+.hand{position:absolute;bottom:0;left:50%;width:0;height:0;transition:left .6s cubic-bezier(.3,1.25,.5,1)}
+
+/* card = toolbar button */
+.card{appearance:none;font:inherit;color:var(--ink);background:var(--paper);cursor:pointer;outline:none;
+  position:absolute;left:calc(var(--cw) / -2);top:calc(var(--vis) * -1);width:var(--cw);height:var(--ch);
+  border:var(--bw) solid var(--edge);border-radius:var(--rad);padding:12px;text-align:left;
+  display:flex;flex-direction:column;gap:8px;
+  transform-origin:50% calc(var(--vis) + var(--pivot));
+  transition:transform .34s cubic-bezier(.3,1.3,.5,1),background .12s,color .12s,opacity .15s}
+.card::before,.face::before,.cardx::before{content:'';position:absolute;inset:4px;border:var(--fw) var(--fs) var(--fc);opacity:.45;border-radius:max(0px,calc(var(--rad) - 4px));pointer-events:none}
+.idx{font-size:12px;letter-spacing:.1em;color:var(--sc);font-weight:700}
+.label{align-self:flex-start;font-weight:700;font-size:13px;letter-spacing:.12em;white-space:nowrap}
+/* hover: card rises out of the fan (JS), label goes red */
+.card:hover .label,.card:focus-visible .label{background:var(--sc);color:var(--paper);box-shadow:0 0 0 4px var(--sc)}
+/* pressed: card goes black and gives under the finger */
+.card:active{--press:.96;background:var(--sc);color:var(--paper)}
+.card:active .idx{color:var(--paper)}
+.card:active .label{background:none;box-shadow:none;color:var(--paper)}
+/* played: the card has left the hand; it is the info box now */
+.card.out{visibility:hidden;pointer-events:none}
+.card.arriving{opacity:0;transition:none}
+
+/* the card in flight: front is the card face, back is the info box */
+.flyer{position:fixed;z-index:100;pointer-events:none;transform-style:preserve-3d}
+.face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;background:var(--paper);
+  border:var(--bw) solid var(--edge);border-radius:var(--rad);padding:12px;display:flex;flex-direction:column;gap:8px;overflow:hidden}
+.face.back{transform:rotateY(180deg);padding:28px 30px;border-radius:var(--prad)}
+.face.back::before{inset:6px;border-radius:max(0px,calc(var(--prad) - 5px))}
+.face.back .idx{font-size:11px;letter-spacing:.14em}
+
+/* ── spec sheet (scroll down) ── */
+.spec{flex:none;max-width:900px;width:100%;margin-top:56px;padding-bottom:20px;display:grid;gap:22px}
+.spec h2{font-size:12px;letter-spacing:.16em;color:var(--muted);font-weight:700;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.spec h2 b{color:var(--ink)}
+.plates{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px}
+.cplate{border:1px solid var(--line);padding:14px;display:grid;gap:12px;justify-items:center}
+.cplate .cap{justify-self:stretch;display:flex;justify-content:space-between;font-size:11px;letter-spacing:.12em;font-weight:700;color:var(--sc)}
+.cplate .cap span{color:var(--muted);font-weight:400}
+.dimbox{position:relative;margin:30px 40px 6px}
+.cardx{position:relative;width:var(--cw);height:var(--ch);background:var(--paper);border:var(--bw) solid var(--edge);border-radius:var(--rad);
+  padding:12px;display:flex;flex-direction:column;gap:8px}
+.dw,.dh{position:absolute;border-color:var(--muted);border-style:solid;font-size:10px;font-weight:700;color:var(--ink);letter-spacing:.06em}
+.dw{left:0;right:0;top:-20px;height:9px;border-width:0 1px}
+.dw::before{content:'';position:absolute;left:0;right:0;top:4px;border-top:1px solid var(--muted)}
+.dw b,.dh b{position:absolute;background:var(--paper);padding:0 4px}
+.dw b{left:50%;top:-6px;transform:translateX(-50%)}
+.dh{top:0;bottom:0;right:-24px;width:9px;border-width:1px 0}
+.dh::before{content:'';position:absolute;top:0;bottom:0;left:4px;border-left:1px solid var(--muted)}
+.dh b{left:4px;top:50%;transform:translate(-50%,-50%);padding:3px 0}
+.dv{position:absolute;left:-40px;width:calc(100% + 40px);font-size:10px;color:var(--red);letter-spacing:.06em;border-top:1px dashed var(--red);padding-top:2px;white-space:nowrap;pointer-events:none}
+.cplate dl{justify-self:stretch;display:grid;grid-template-columns:auto 1fr;gap:2px 12px;font-size:10px;letter-spacing:.1em}
+.cplate dt{color:var(--muted)}
+.fan{border:1px solid var(--line);padding:14px}
+.fan svg{width:100%;height:auto;display:block}
+.fan .g{stroke:var(--muted);stroke-width:1;fill:none}
+.fan .g.dash{stroke-dasharray:3 4}
+.fan .c{fill:var(--paper);stroke:var(--ink);stroke-width:2}
+.fan .c.red{stroke:var(--red)}
+.fan .ghost{fill:none;stroke:var(--red);stroke-width:1.5;stroke-dasharray:4 4}
+.fan .veil{fill:var(--paper);opacity:.78}
+.fan text{font:700 11px var(--font);letter-spacing:.08em;fill:var(--ink)}
+.fan text.m{fill:var(--muted);font-weight:400}
+.fan text.r{fill:var(--red)}
+.spec .stat b{font-size:13px}
+
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand"><b>&gt;HAPPY EARTH CORP</b> // PLANNING DECK</div>
+  <div class="controls">
+    <div class="seg"><span>SET</span><a href="index.html">TRAIN</a><a class="on" href="cards.html">CARDS</a></div>
+    <div class="seg"><a href="#spec">SPEC &darr;</a></div>
+    <div class="seg" data-key="align"><span>ALIGN</span><button data-v="left">L</button><button data-v="center" class="on">C</button><button data-v="right">R</button></div>
+  </div>
+</header>
+
+<main id="main"><section class="panel" id="panel" aria-live="polite"></section>
+<section class="spec" id="spec" aria-label="Card dimensions"></section></main>
+
+<section class="stage" id="stage">
+  <div class="hand" id="hand" role="toolbar" aria-label="Hand of cards toolbar"></div>
+</section>
+
+<script>
+const CARDS = [
+  {name:'ORBIT', rank:'A', suit:'spades', title:'BIRDTAKEFLIGHT.ORBIT.PATH',
+   sub:'Radial hyperspace, ninety degrees each way. Stay inside the Triangate safezone.',
+   stats:[['ALTITUDE','90°'],['LATITUDE','90°'],['DECLINATION','90°'],['ZONE','TRIANGATE']],
+   text:'The orbit is drawn once per planning phase. If the path crosses the Fontes Square anomaly, redraw it.'},
+  {name:'PROBES', rank:'2', suit:'clubs', title:'PROBE INSTRUCTIONS',
+   sub:'Send your instructions to the probes before anything else.',
+   stats:[['PROBES','3'],['MOON-E','ACTIVE'],['TAU-E','DRIFTING'],['SENT','0 / 1']],
+   text:'Instructions are sent once. The probes do not acknowledge receipt. Assume they heard you.'},
+  {name:'MOON', rank:'3', suit:'hearts', title:'CURRENT PHASE',
+   sub:'Write down the current phase of the moon in your diary.',
+   stats:[['PHASE','WANING GIBBOUS'],['LIT','71%'],['NEXT FULL','3 CYCLES'],['MOON-E','ON STATION']],
+   text:'The moon is observed, not consulted. Note what it is doing and move on.'},
+  {name:'SUITS', rank:'4', suit:'diamonds', title:'MOST DRAWN SUIT',
+   sub:'Check the most drawn card suit during the planning phase.',
+   stats:[['♠ SPADES','14'],['♦ DIAMONDS','11','r'],['♥ HEARTS','9','r'],['♣ CLUBS','6']],
+   text:'Spades lead this phase. Record the leader, not the margin.'},
+  {name:'DIARY', rank:'5', suit:'hearts', title:'RECORDING.INI',
+   sub:'Write down whatever is asked of you. Be as brief or as lengthy as you like.',
+   stats:[['ENTRIES','41'],['VOICE','ENABLED'],['LAST','STARDATE 18.45.649'],['PROMPTS','NEXT PAGE']],
+   text:'You may also record your voice, instead of writing or in addition to it.'},
+  {name:'SAFETY', rank:'6', suit:'spades', title:'SAFETY INSTRUCTIONS',
+   sub:'Safety instructions are on page ### ####.',
+   stats:[['PAGE','### ####','r'],['STATUS','REDACTED'],['CARGO','182 T FROZEN HAM'],['CONTACT','HAPPY EARTH CORP']],
+   text:'If the page number cannot be read, you are already safe. Thank you.'}
+];
+
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const $ = s => document.querySelector(s);
+const hand=$('#hand'), stage=$('#stage'), panel=$('#panel');
+const SPREAD=11, PART=4, LIFT=-30, TILT={left:5,center:0,right:-5};
+const CW=112, CH=160, VIS=118, PIVOT=300;
+const state={align:'center', sel:0};
+let cards=[], hoverI=-1, busy=false;
+const PIP={spades:'♠',clubs:'♣',hearts:'♥',diamonds:'♦'};
+const pad = i => String(i+1).padStart(2,'0');
+const idx = i => `${CARDS[i].rank}${PIP[CARDS[i].suit]}`;
+
+/* ───────── build + fan ───────── */
+function build(){
+  CARDS.forEach((c,i)=>{
+    const b=document.createElement('button');
+    b.className=`card s-${c.suit}`+(i===state.sel?' out':'');
+    b.dataset.i=i;
+    b.setAttribute('aria-label', `${c.name}, ${c.rank} of ${c.suit}`);
+    b.innerHTML=`<span class="idx">${idx(i)}</span><span class="label">${c.name}</span>`;
+    hand.appendChild(b);
+  });
+  cards=[...hand.children];
+}
+const inHand = () => cards.filter(c=>!c.classList.contains('out'));
+function layout(){
+  const vis=inHand(), n=vis.length, tilt=TILT[state.align];
+  const h=vis.findIndex(c=>+c.dataset.i===hoverI);
+  vis.forEach((el,k)=>{
+    let a=(k-(n-1)/2)*SPREAD+tilt;
+    if(h>=0 && k!==h) a += (k<h?-1:1)*PART;
+    const ly = k===h ? LIFT : 0;
+    el._a=a; el._ly=ly;
+    el.style.transform=`rotate(${a}deg) translateY(${ly}px) scale(var(--press,1))`;
+    el.style.zIndex = k===h ? 50 : k+1;
+  });
+  const W=stage.clientWidth, R=VIS+PIVOT, maxA=((n-1)/2*SPREAD+Math.abs(tilt)+PART)*Math.PI/180;
+  const ext=R*Math.sin(maxA)+CW/2, m=28;
+  hand.style.left=(state.align==='left' ? m+ext : state.align==='right' ? W-m-ext : W/2)+'px';
+}
+// where a card's center will be once the fan settles (independent of running transitions)
+function restPose(el){
+  const s=stage.getBoundingClientRect(), hx=parseFloat(hand.style.left), a=el._a*Math.PI/180;
+  const R=VIS+PIVOT, d=R-CH/2 - (el._ly||0);              // pivot → card center
+  const px=s.left+hx, py=s.bottom+PIVOT;
+  return {x:px+Math.sin(a)*d, y:py-Math.cos(a)*d, a:el._a};
+}
+
+/* ───────── play a card: it flips over and becomes the info box ───────── */
+function flyer(i){
+  const f=document.createElement('div'); f.className='flyer';
+  const su=`s-${CARDS[i].suit}`, pip=PIP[CARDS[i].suit];
+  f.innerHTML=`<div class="face front ${su}"><span class="idx">${idx(i)}</span><span class="label">${CARDS[i].name}</span></div>`+
+              `<div class="face back ${su}"><span class="idx">${idx(i)} // ${CARDS[i].name}</span><span class="pip">${pip}</span><span class="corner">${CARDS[i].rank}<br>${pip}</span></div>`;
+  document.body.appendChild(f); return f;
+}
+const P='perspective(1600px)';
+const atCard=(p,flip)=>({left:(p.x-CW/2)+'px', top:(p.y-CH/2)+'px', width:CW+'px', height:CH+'px', transform:`${P} rotate(${p.a}deg) rotateY(${flip}deg)`});
+const atTable=(r,flip)=>({left:r.left+'px', top:r.top+'px', width:r.width+'px', height:r.height+'px', transform:`${P} rotate(0deg) rotateY(${flip}deg)`});
+
+function play(i){
+  if(busy || i===state.sel) return;
+  const prev=state.sel; state.sel=i;
+  if(reduced){ cards[prev].classList.remove('out'); cards[i].classList.add('out'); hoverI=-1; layout(); renderPanel(); return; }
+  busy=true;
+  const table=panel.getBoundingClientRect();
+  const from=restPose(cards[i]);
+
+  // the clicked card leaves the hand; the previous one comes back into it
+  hoverI=-1;
+  cards[i].classList.add('out');
+  cards[prev].classList.remove('out'); cards[prev].classList.add('arriving');
+  layout();
+  panel.classList.add('away');
+
+  // previous card: the info box flips back over into a card and returns to its slot
+  const back=flyer(prev);
+  back.animate([atTable(table,180), atCard(restPose(cards[prev]),360)], {duration:540, easing:'cubic-bezier(.45,0,.25,1)', fill:'forwards'})
+      .onfinish=()=>{ back.remove(); cards[prev].classList.remove('arriving'); };
+
+  // new card: lifts out of the hand, flies up and flips over into the info box
+  const up=flyer(i);
+  up.animate([
+    {...atCard(from,0), offset:0},
+    {left:(from.x-CW/2)+'px', top:(from.y-CH/2-70)+'px', width:CW+'px', height:CH+'px', transform:`${P} rotate(${from.a*.4}deg) rotateY(0deg)`, offset:.2},
+    {...atTable(table,180), offset:1}
+  ], {duration:700, delay:160, easing:'cubic-bezier(.35,.1,.2,1)', fill:'both'})
+    .onfinish=()=>{ renderPanel(); panel.classList.remove('away'); up.remove(); busy=false; };
+}
+
+/* ───────── table ───────── */
+let typeTimer=null;
+function renderPanel(){
+  const c=CARDS[state.sel], pip=PIP[c.suit];
+  panel.className=`panel s-${c.suit}`;
+  panel.innerHTML=`
+    <span class="pip" aria-hidden="true">${pip}</span>
+    <span class="corner" aria-hidden="true">${c.rank}<br>${pip}</span>
+    <div class="phead ln"><span>${idx(state.sel)} // ${c.name}</span><span>${c.rank} OF ${c.suit.toUpperCase()}</span></div>
+    <h1 class="ln" id="ttl"></h1>
+    <p class="ln sub">${c.sub}</p>
+    <div class="stats">${c.stats.map(([k,v,r])=>`<div class="ln stat"><span>${k}</span><b class="${r||''}">${v}</b></div>`).join('')}</div>
+    <p class="ln body">${c.text}</p>`;
+  panel.querySelectorAll('.ln').forEach((el,k)=> el.style.animationDelay=(k*45)+'ms');
+  const ttl=$('#ttl'); let n=0; clearInterval(typeTimer);
+  typeTimer=setInterval(()=>{ n++; ttl.textContent=c.title.slice(0,n)+(n<c.title.length?'_':''); if(n>=c.title.length) clearInterval(typeTimer); }, reduced?0:22);
+}
+
+/* ───────── input ───────── */
+hand.addEventListener('click', e=>{
+  const c=e.target.closest('.card'); if(!c) return;
+  const kb=c.matches(':focus-visible'), before=inHand().indexOf(c);
+  play(+c.dataset.i);
+  if(kb){ const v=inHand(); v[Math.min(v.length-1, Math.max(0, before))]?.focus(); }
+});
+hand.addEventListener('pointerover', e=>{ if(busy) return; const c=e.target.closest('.card'); const n=c?+c.dataset.i:-1; if(n!==hoverI){ hoverI=n; layout(); } });
+hand.addEventListener('pointerleave', ()=>{ if(busy) return; hoverI=-1; layout(); });
+hand.addEventListener('focusin', e=>{ const c=e.target.closest('.card'); if(c&&c.matches(':focus-visible')&&!busy){ hoverI=+c.dataset.i; layout(); } });
+hand.addEventListener('focusout', ()=>{ if(busy) return; hoverI=-1; layout(); });
+hand.addEventListener('keydown', e=>{
+  const c=e.target.closest('.card'); if(!c) return;
+  if(e.key==='ArrowRight'||e.key==='ArrowLeft'){
+    e.preventDefault();
+    const v=inHand(), k=v.indexOf(c);
+    v[Math.max(0,Math.min(v.length-1, k+(e.key==='ArrowRight'?1:-1)))].focus();
+  }
+});
+document.querySelectorAll('.seg[data-key]').forEach(seg=>{
+  seg.addEventListener('click', e=>{
+    const b=e.target.closest('button'); if(!b) return;
+    seg.querySelectorAll('button').forEach(x=>x.classList.toggle('on', x===b));
+    state[seg.dataset.key]=b.dataset.v; layout();
+  });
+});
+window.addEventListener('resize', layout);
+
+
+/* ───────── spec sheet: card + fan geometry, measured ───────── */
+function buildSpec(){
+  const SUITS=[['spades','tight corners, heavy edge'],['clubs','rounded, dotted frame'],
+               ['hearts','soft corners, double frame'],['diamonds','square corners, dashed frame']];
+  const cs=getComputedStyle(document.body);
+  const plates=SUITS.map(([su,note])=>{
+    const i=CARDS.findIndex(c=>c.suit===su), c=CARDS[i];
+    const probe=document.createElement('div'); probe.className='s-'+su; document.body.appendChild(probe);
+    const v=k=>getComputedStyle(probe).getPropertyValue(k).trim(); 
+    const row={rad:v('--rad'),prad:v('--prad'),bw:v('--bw'),fs:v('--fs'),fw:v('--fw'),col:su==='hearts'||su==='diamonds'?'RED #D0202F':'INK #141414'};
+    probe.remove();
+    return `<figure class="cplate s-${su}">
+      <div class="cap">${PIP[su]} ${su.toUpperCase()}<span>${c.rank}${PIP[su]} ${c.name}</span></div>
+      <div class="dimbox"><div class="cardx s-${su}"><span class="idx">${idx(i)}</span><span class="label">${c.name}</span></div>
+        <div class="dw"><b>${CW}</b></div><div class="dh"><b>${CH}</b></div>
+        <div class="dv" style="top:${VIS}px">VIS ${VIS}</div></div>
+      <dl><dt>RADIUS</dt><dd>${row.rad} card &middot; ${row.prad} box</dd>
+          <dt>EDGE</dt><dd>${row.bw} solid</dd>
+          <dt>FRAME</dt><dd>${row.fw} ${row.fs} @ 45%, inset 4</dd>
+          <dt>COLOUR</dt><dd>${row.col}</dd>
+          <dt>CHARACTER</dt><dd>${note}</dd></dl>
+    </figure>`;
+  }).join('');
+
+  // fan geometry, drawn 1:1 in a viewBox
+  const SW=760, SH=180, ox=SW/2, oy=SH, px=ox, py=SH+PIVOT, n=5, a=k=>(k-(n-1)/2)*SPREAD;
+  const rect=`x="${ox-CW/2}" y="${oy-VIS}" width="${CW}" height="${CH}" rx="6"`;
+  const rad=d=>d*Math.PI/180, pt=(deg,r)=>[px+r*Math.sin(rad(deg)), py-r*Math.cos(rad(deg))];
+  const R=VIS+PIVOT, ar=150, [a1x,a1y]=pt(a(2),ar), [a2x,a2y]=pt(a(3),ar), [tx,ty]=pt((a(2)+a(3))/2,ar+18);
+  const cardsSvg=Array.from({length:n},(_,k)=>`<rect class="c${k%2?' red':''}" ${rect} transform="rotate(${a(k)} ${px} ${py})"/>`).join('');
+  const guides=Array.from({length:n},(_,k)=>{const [x,y]=pt(a(k),R); return `<path class="g dash" d="M${px} ${py}L${x} ${y}"/>`;}).join('');
+  const fan=`<svg viewBox="-10 -40 ${SW+20} ${SH+PIVOT+80}" role="img" aria-label="Fan geometry: cards rotate around a pivot ${PIVOT}px below the stage">
+    <rect class="g dash" x="0" y="0" width="${SW}" height="${SH}"/>
+    <text class="m" x="6" y="-8">STAGE ${SW>0?'':''}&middot; ${SH} TALL</text>
+    ${guides}${cardsSvg}
+    <rect class="ghost" ${rect} transform="translate(0 ${LIFT})"/>
+    <rect class="veil" x="-10" y="${SH+1}" width="${SW+20}" height="${PIVOT+70}"/>
+    <path class="g" d="M-10 ${SH}H${SW+10}"/>
+    ${guides}
+    <path class="g" d="M${a1x} ${a1y}A${ar} ${ar} 0 0 1 ${a2x} ${a2y}"/>
+    <text x="${tx}" y="${ty}" text-anchor="middle">${SPREAD}&deg;</text>
+    <circle cx="${px}" cy="${py}" r="4" fill="var(--red)"/>
+    <text class="r" x="${px+10}" y="${py+4}">PIVOT</text>
+    <path class="g" d="M${px+140} ${SH}V${py}M${px+134} ${SH}h12M${px+134} ${py}h12"/>
+    <text x="${px+150}" y="${(SH+py)/2+4}">${PIVOT}</text><text class="m" x="${px+150}" y="${(SH+py)/2+18}">PIVOT BELOW STAGE</text>
+    <path class="g dash" d="M${ox+CW/2} ${oy-VIS}H${ox+262}"/>
+    <path class="g" d="M${ox+256} ${oy-VIS}V${oy}M${ox+250} ${oy-VIS}h12M${ox+250} ${oy}h12M${ox+256} ${oy}V${oy+CH-VIS}M${ox+250} ${oy+CH-VIS}h12"/>
+    <path class="g dash" d="M${ox+CW/2} ${oy+CH-VIS}H${ox+262}"/>
+    <text x="${ox+268}" y="${oy-VIS/2}">${VIS}</text><text class="m" x="${ox+268}" y="${oy-VIS/2+14}">VISIBLE</text>
+    <text class="m" x="${ox+268}" y="${oy+(CH-VIS)/2+4}">${CH-VIS} HIDDEN</text>
+    <path class="g" d="M${ox-CW/2-14} ${oy-VIS}V${oy-VIS+LIFT}"/>
+    <text class="r" x="${ox-CW/2-18}" y="${oy-VIS+LIFT/2+4}" text-anchor="end">LIFT ${-LIFT}</text>
+    <text class="m" x="${ox-CW/2-18}" y="${oy-VIS+LIFT/2+18}" text-anchor="end">ON HOVER</text>
+  </svg>`;
+
+  const sys=[['CARD',`${CW} &times; ${CH} px`],['VISIBLE',`${VIS} px &middot; ${CH-VIS} below floor`],['PIVOT',`${PIVOT} px below stage`],
+    ['SPREAD',`${SPREAD}&deg; per card`],['PART',`&plusmn;${PART}&deg; around lifted card`],['HOVER',`lift ${-LIFT} px`],
+    ['TILT',`${TILT.left}&deg; L &middot; 0 C &middot; ${TILT.right}&deg; R`],['PRESS','scale .96, fills suit colour'],['STAGE','180 px tall'],
+    ['PADDING','12 px &middot; gap 8'],['INDEX','Space Mono 700 12 / .1em'],['LABEL','Space Mono 700 13 / .12em'],
+    ['FLIP','700 ms &middot; perspective 1600'],['RETURN','540 ms back to the hand']];
+  spec.innerHTML=`<h2><b>SPEC // CARD DIMENSIONS</b><span>UNITS: PX &middot; DRAWN 1:1</span></h2>
+    <div class="plates">${plates}</div>
+    <h2><b>FAN GEOMETRY</b><span>5 CARDS IN HAND</span></h2>
+    <div class="fan">${fan}</div>
+    <h2><b>SYSTEM</b><span>SHARED BY EVERY SUIT</span></h2>
+    <div class="stats">${sys.map(([k,v])=>`<div class="stat"><span>${k}</span><b>${v}</b></div>`).join('')}</div>`;
+}
+const spec=document.getElementById('spec');
+/* ───────── deal ───────── */
+build();
+buildSpec();
+renderPanel();
+hand.style.transition='none'; layout();
+cards.forEach(el=>el.style.transform='rotate(0deg) translateY(240px)');
+void hand.offsetWidth; hand.style.transition='';
+if(reduced) layout();
+else requestAnimationFrame(()=>{
+  inHand().forEach((el,k)=>el.style.transitionDelay=(k*70)+'ms');
+  layout();
+  setTimeout(()=>cards.forEach(el=>el.style.transitionDelay=''), 900);
+});
+</script>
+</body>
+</html>

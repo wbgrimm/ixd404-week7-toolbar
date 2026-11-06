@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BTF.V — Train Toolbar</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+@property --lift { syntax: '<length>'; inherits: false; initial-value: 0px; }
+
+:root{
+  --bg:#0a0c07; --ink:#d6f25a; --dim:#7d8c35; --faint:#2c3313; --hover:#1a1f0b;
+  --font:'Space Mono', ui-monospace, Menlo, monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg);color:var(--ink);font-family:var(--font)}
+body{display:flex;flex-direction:column;overflow:hidden}
+
+/* ── header ── */
+header{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;
+  padding:12px 24px;border-bottom:2px solid var(--ink);font-size:12px;letter-spacing:.08em}
+.brand b{font-weight:700}
+.controls{display:flex;gap:18px;flex-wrap:wrap}
+.seg{display:flex;align-items:center;gap:4px}
+.seg>span{color:var(--dim);margin-right:4px}
+.seg button,.seg a{font:inherit;background:none;color:var(--dim);border:1px solid var(--faint);padding:2px 8px;cursor:pointer;letter-spacing:inherit;text-decoration:none}
+.seg button:hover:not(.on),.seg a:hover:not(.on){color:var(--ink);border-color:var(--dim)}
+.seg .on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+
+/* ── main page: the inside of the selected car ── */
+main{flex:1;min-height:0;overflow:auto;padding:28px 24px;display:flex;flex-direction:column}
+.panel{border:2px solid var(--ink);max-width:900px;width:100%;flex:1 0 auto}
+.panel .bar{background:var(--ink);color:var(--bg);font-weight:700;padding:4px 10px;display:flex;justify-content:space-between;font-size:12px;letter-spacing:.1em}
+.panel .content{padding:20px 22px 24px;display:grid;gap:16px}
+.panel h1{font-size:34px;letter-spacing:.04em;line-height:1.1;min-height:1.1em}
+.panel .sub{font-size:14px;max-width:60ch}
+.stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));border-top:1px solid var(--faint);border-left:1px solid var(--faint)}
+.stat{padding:10px 12px;border-right:1px solid var(--faint);border-bottom:1px solid var(--faint);display:grid;gap:4px}
+.stat span{font-size:10px;color:var(--dim);letter-spacing:.14em}
+.stat b{font-size:16px}
+.panel .body{font-size:13px;line-height:1.7;color:var(--dim);max-width:64ch}
+.ln{opacity:0;animation:arrive .45s cubic-bezier(.2,.8,.2,1) forwards}
+@keyframes arrive{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+.ln.leave{animation:leave .2s cubic-bezier(.5,0,.9,.4) forwards}
+@keyframes leave{from{opacity:1;transform:none}to{opacity:0;transform:translateX(60px)}}
+
+/* ── the stage ── */
+.stage{position:relative;flex:none;height:210px;overflow:clip}
+.stage canvas{position:absolute;inset:0;width:100%;height:100%}
+.train{position:absolute;left:0;bottom:44px;display:flex;align-items:flex-end;will-change:transform;z-index:1;transform-origin:0 100%}
+
+/* ── car = toolbar button; its silhouette is an SVG ── */
+.car{appearance:none;font:inherit;color:var(--ink);background:none;border:0;padding:0;cursor:pointer;outline:none;
+  position:relative;display:block;height:80px;flex:none;
+  transform:translateY(calc(var(--bump,0px) + var(--lift)));transition:--lift .14s ease-out}
+.car svg{position:absolute;inset:0;overflow:visible}
+.car .f,.plate .f{fill:var(--bg);stroke:var(--ink);stroke-width:2;stroke-linejoin:round;transition:fill .15s}
+.car .d,.plate .d{fill:none;stroke:var(--ink);stroke-width:2;stroke-linecap:round;transition:stroke .15s}
+.car .o,.plate .o{fill:none;stroke:var(--ink);stroke-width:2;stroke-linecap:round}
+.car .w,.plate .w{fill:var(--bg);stroke:var(--ink);stroke-width:2}
+.car .spin{transform:rotate(var(--rot,0deg))}
+.label{position:absolute;transform:translate(-50%,-50%);font-weight:700;font-size:13px;letter-spacing:.12em;white-space:nowrap;line-height:1;transition:color .15s;pointer-events:none}
+.coupler{flex:none;width:10px;height:2px;background:var(--ink);margin-bottom:20px;transition:width .08s}
+.coupler.sq{width:3px}
+
+/* shared states */
+.car:hover,.car:focus-visible{--lift:-6px}
+.car:hover .f,.car:focus-visible .f,.car:hover .tk,.car:focus-visible .tk{fill:var(--hover)}
+.car:focus-visible .label{text-decoration:underline;text-underline-offset:4px}
+.car:active,.car.pressing{--lift:2px;transition-duration:.04s}
+.car:active .f,.car.pressing .f,.car.sel .f{fill:var(--ink)}
+.car:active .d,.car.pressing .d,.car.sel .d{stroke:var(--bg)}
+.car:active .label,.car.pressing .label,.car.sel .label{color:var(--bg)}
+
+/* BTF.V — headlamp flickers on hover; lit when selected; side rod follows the cranks */
+.hl{fill:var(--dim);stroke:var(--ink);stroke-width:1.5;transition:fill .15s}
+.t-eng:hover .hl,.t-eng:focus-visible .hl{animation:flicker .5s steps(1) forwards}
+@keyframes flicker{0%{fill:var(--ink)}20%{fill:var(--dim)}35%{fill:var(--ink)}50%{fill:var(--dim)}65%,100%{fill:var(--ink)}}
+.t-eng.sel .hl{fill:var(--ink)}
+.rod{transform:translate(var(--rx,0px),var(--ry,0px))}
+
+/* CARGO — door cracks open on hover, slides open when selected */
+.hole{fill:var(--bg);stroke:var(--ink);stroke-width:2}
+.in{fill:none;stroke:var(--ink);stroke-width:1.5;stroke-linejoin:round}
+.door{transition:transform .45s cubic-bezier(.5,0,.2,1)}
+.t-cargo:hover .door,.t-cargo:focus-visible .door{transform:translateX(5px)}
+.t-cargo.sel .door{transform:translateX(36px);transition:transform .75s cubic-bezier(.6,0,.15,1.1)}
+
+/* CREW — a passenger peeks on hover; lights come on window by window when selected */
+.win{fill:var(--bg);stroke:var(--ink);stroke-width:1.5;transition:fill .12s,stroke .15s}
+.head{fill:var(--ink);opacity:0;transition:opacity .15s,fill .15s}
+.t-crew:hover .head.h3,.t-crew:focus-visible .head.h3{opacity:1}
+.t-crew.sel .win{fill:var(--ink);stroke:var(--bg);transition-delay:calc(var(--k) * 55ms),.45s}
+.t-crew.sel .head{opacity:1;fill:var(--bg);transition-delay:calc(var(--k) * 55ms + 60ms),0s}
+.t-crew.sel .f{transition-delay:.42s}
+
+/* PROBES — dish turns toward you on hover, scans when selected (pings drawn on canvas) */
+.dish{transform-origin:119px 32px;transition:transform .35s cubic-bezier(.3,1.4,.5,1)}
+.t-probe:hover .dish,.t-probe:focus-visible .dish{transform:rotate(-24deg)}
+.t-probe.sel .dish{animation:scan 3s ease-in-out infinite alternate}
+@keyframes scan{from{transform:rotate(-18deg)}to{transform:rotate(18deg)}}
+.tip{fill:var(--ink)}
+
+/* DIARY — liquid sloshes on hover, fills the tank when selected */
+.tk{fill:var(--bg);transition:fill .15s}
+.tko{fill:none;stroke:var(--ink);stroke-width:2}
+.lq{transform:translateY(64px);transition:transform .9s cubic-bezier(.3,1.25,.5,1)}
+.t-diary:hover .lq,.t-diary:focus-visible .lq{transform:translateY(52px)}
+.t-diary.sel .lq{transform:translateY(12px);transition-duration:1.3s}
+.wave{fill:var(--ink);animation:wave 1.1s linear infinite}
+@keyframes wave{to{transform:translateX(28px)}}
+.t-diary.sel .d,.t-diary.sel .label{transition-delay:.35s}
+
+/* LOG — tail lamp swings on hover; cupola lantern lit when selected (smoke drawn on canvas) */
+.cw{fill:var(--bg);stroke:var(--ink);stroke-width:2;transition:stroke .15s}
+.t-log.sel .cw{stroke:var(--bg)}
+.lantern{fill:var(--ink);opacity:0}
+.t-log.sel .lantern{animation:lantern 1.6s infinite}
+@keyframes lantern{0%,100%{opacity:1}30%{opacity:.5}45%{opacity:.95}70%{opacity:.7}}
+.tl{fill:var(--ink)}
+.tail{transform-origin:125px 27px}
+.t-log:hover .tail,.t-log:focus-visible .tail{animation:swing 1.1s ease-in-out}
+@keyframes swing{0%{transform:rotate(0)}20%{transform:rotate(24deg)}45%{transform:rotate(-15deg)}70%{transform:rotate(7deg)}100%{transform:rotate(0)}}
+
+
+/* ── spec sheet (scroll down) ── */
+.spec{flex:none;max-width:900px;width:100%;margin-top:56px;padding-bottom:12px;display:grid;gap:22px}
+.spec h2{font-size:12px;letter-spacing:.16em;color:var(--dim);font-weight:700;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.spec h2 b{color:var(--ink)}
+.plates{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+.plate{border:1px solid var(--faint);padding:14px 14px 12px;display:grid;gap:10px}
+.plate svg{max-width:100%;height:auto;overflow:visible;justify-self:center;margin:6px 0}
+.plate .cap{display:flex;justify-content:space-between;font-size:11px;letter-spacing:.12em}
+.plate .cap span{color:var(--dim)}
+.plate dl{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;font-size:10px;letter-spacing:.1em}
+.plate dt{color:var(--dim)} .plate dd{color:var(--ink)}
+.dim{stroke:var(--dim);stroke-width:1;fill:none}
+.dim.ext{stroke-dasharray:2 3;opacity:.7}
+.dimt{fill:var(--ink);font:700 10px var(--font);letter-spacing:.06em}
+.dimt.m{fill:var(--dim);font-weight:400}
+.plabel{fill:var(--ink);font:700 13px var(--font);letter-spacing:.12em}
+.anchor{stroke:var(--dim);stroke-width:1}
+.spec .stats{margin-top:2px}
+
+@media (prefers-reduced-motion: reduce){
+  .wave,.t-probe.sel .dish,.t-log.sel .lantern,.t-log:hover .tail,.t-eng:hover .hl{animation:none}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand"><b>&gt;HAPPY EARTH CORP</b> // BTF.V</div>
+  <div class="controls">
+    <div class="seg"><span>SET</span><a class="on" href="index.html">TRAIN</a><a href="cards.html">CARDS</a></div>
+    <div class="seg"><a href="#spec">SPEC &darr;</a></div>
+    <div class="seg" data-key="align"><span>ALIGN</span><button data-v="left">L</button><button data-v="center" class="on">C</button><button data-v="right">R</button><button data-v="follow">FOLLOW</button></div>
+  </div>
+</header>
+
+<main id="main"><section class="panel" id="panel" aria-live="polite"></section>
+<section class="spec" id="spec" aria-label="Carriage dimensions"></section></main>
+
+<section class="stage" id="stage">
+  <canvas id="land"></canvas>
+  <nav class="train" id="train" aria-label="Train toolbar"></nav>
+</section>
+
+<script>
+/* ───────── silhouettes (80px tall; wheels sit on the rail at the bottom) ─────────
+   .f = body panel (fills ink when selected)   .d = detail on the body (goes dark when selected)
+   .o = detail off the body (always ink)       .w = wheel                                      */
+const WY=73;
+const wheel=x=>`<g transform="translate(${x} ${WY})"><g class="spin"><circle class="w" r="7"/><path class="o" d="M0 -4V4"/></g></g>`;
+const crewWindows=()=>Array.from({length:7},(_,k)=>{ const x=14+18*k;
+  return `<rect class="win" style="--k:${k}" x="${x}" y="27" width="10" height="8"/>`+
+         `<path class="head${k===3?' h3':''}" style="--k:${k}" d="M${x+2} 35 Q${x+5} 31.4 ${x+8} 35 Z"/><circle class="head${k===3?' h3':''}" style="--k:${k}" cx="${x+5}" cy="30.6" r="1.7"/>`; }).join('');
+const wavePath='M-28 0 q7 -4 14 0'+' t14 0'.repeat(14)+' V70 H-28 Z';
+
+const SHAPES = {
+  eng:{w:172, label:[64,46], wheels:[44,70,96,146], stack:[36,3], lamp:[10,26], svg:`
+    <path class="f" d="M2 66 L18 50 H28 V66 Z"/>
+    <path class="f" d="M30 30 V12 H26 L23 3 H49 L46 12 H42 V30 Z"/>
+    <path class="f" d="M62 30 V24 A8 6 0 0 1 78 24 V30 Z"/>
+    <path class="f" d="M20 30 H112 V62 H20 A16 16 0 0 1 20 30 Z"/>
+    <path class="f" d="M108 66 V16 H164 V66 Z"/>
+    <path class="f" d="M102 16 V10 H170 V16 Z"/>
+    <rect class="d" x="122" y="24" width="30" height="16" rx="2"/>
+    <rect class="hl" x="8" y="21" width="9" height="9" rx="1.5"/>
+    <path class="f" d="M18 62 H166 V67 H18 Z"/>`,
+    after:`<g class="rod"><path class="o" d="M44 73 H96"/></g>`},
+  cargo:{w:150, label:[44,41], wheels:[20,36,114,130], svg:`
+    <rect class="f" x="3" y="16" width="144" height="50" rx="2"/>
+    <rect class="f" x="1" y="11" width="148" height="5"/>
+    <path class="d" d="M8 25H14M8 33H14M8 41H14M8 49H14M8 57H14"/>
+    <path class="d" d="M76 19 H146"/>
+    <rect class="hole" x="80" y="21" width="36" height="40"/>
+    <path class="in" d="M83 45h14v14h-14z M83 45l14 14 M97 45l-14 14 M99 49h13v10h-13z M86 30h12v15h-12z M86 37h12"/>
+    <g class="door"><rect class="f" x="80" y="21" width="36" height="40"/><path class="d" d="M86 39 V45"/></g>`},
+  crew:{w:150, label:[75,51], wheels:[22,38,112,128], svg:`
+    <rect class="f" x="3" y="20" width="144" height="46" rx="4"/>
+    <path class="f" d="M1 22 Q4 12 16 12 H134 Q146 12 149 22 Z"/>
+    <rect class="f" x="26" y="6" width="98" height="6"/>
+    ${crewWindows()}`},
+  probe:{w:150, label:[51,38], wheels:[20,36,114,130], dish:[119,16], svg:`
+    <rect class="f" x="3" y="54" width="144" height="12"/>
+    <rect class="f" x="8" y="22" width="86" height="32" rx="2"/>
+    <rect class="f" x="116" y="32" width="6" height="22"/>
+    <g class="dish"><path class="f" d="M100 16 Q119 44 138 16 Z"/><path class="o" d="M119 30 V8"/><circle class="tip" cx="119" cy="7" r="3"/></g>`},
+  diary:{w:146, label:[73,40], wheels:[20,36,110,126], svg:`
+    <defs><clipPath id="tankclip"><rect x="7" y="23" width="132" height="34" rx="17"/></clipPath></defs>
+    <rect class="f" x="3" y="58" width="140" height="8"/>
+    <rect class="f" x="62" y="13" width="22" height="10"/>
+    <rect class="f" x="58" y="10" width="30" height="4"/>
+    <rect class="tk" x="6" y="22" width="134" height="36" rx="18"/>
+    <g clip-path="url(#tankclip)"><g class="lq"><path class="wave" d="${wavePath}"/></g></g>
+    <rect class="tko" x="6" y="22" width="134" height="36" rx="18"/>
+    <path class="d" d="M30 24 V56 M116 24 V56"/>`},
+  log:{w:128, label:[64,46], wheels:[26,42,86,102], pipe:[25,3], svg:`
+    <rect class="f" x="22" y="6" width="6" height="14"/>
+    <rect class="f" x="20" y="3" width="10" height="3"/>
+    <rect class="f" x="40" y="6" width="40" height="14"/>
+    <rect class="f" x="36" y="2" width="48" height="4"/>
+    <rect class="cw" x="48" y="9" width="24" height="7" rx="1"/>
+    <circle class="lantern" cx="60" cy="12.5" r="2"/>
+    <rect class="f" x="12" y="24" width="104" height="42"/>
+    <rect class="f" x="8" y="19" width="112" height="5"/>
+    <rect class="d" x="19" y="32" width="10" height="10" rx="1"/>
+    <rect class="d" x="99" y="32" width="10" height="10" rx="1"/>
+    <path class="o" d="M2 66 V44 H11 M2 54 H11 M126 66 V44 H117"/>
+    <path class="f" d="M0 64 H128 V68 H0 Z"/>
+    <g class="tail"><path class="o" d="M117 27 H125 V30"/><rect class="tl" x="122.5" y="30" width="5" height="7" rx="1"/></g>`}
+};
+
+const CARS = [
+  {id:'eng', name:'BTF.V', kind:'LOCOMOTIVE', title:'BIRDTAKEFLIGHT.V',
+   sub:'Lead engine. Pulls the whole manifest. Please do not tap on the glass.',
+   stats:[['SPEED','094 KM/H'],['ROUTE','TAU-CETI → JUPITER GATE'],['NEXT STOP','TRIANGATE SAFEZONE'],['CARS COUPLED','6']],
+   text:'Every car behind this one is a destination. Press a car and the train hands you its contents. The engine keeps time; the rest of the train keeps everything else.'},
+  {id:'cargo', name:'CARGO', kind:'FREIGHT', title:'COLD STORAGE 02',
+   sub:'Currently carrying 182 tonnes of frozen ham.',
+   stats:[['TEMP','-18°C'],['LOAD','182 T'],['SEALS','INTACT'],['BOUND FOR','FONTES SQUARE']],
+   text:'Removal process: LOAD? [Y] [Y] [Y]. The ham does not know where it is going. Strictly speaking, neither do we.'},
+  {id:'crew', name:'CREW', kind:'PASSENGER', title:'CREW QUARTERS',
+   sub:'Four souls, one kettle.',
+   stats:[['ON DUTY','2'],['ASLEEP','1'],['UNACCOUNTED','1'],['MORALE','NOMINAL']],
+   text:'Report any crew member who appears to be counting the cars. There have always been six.'},
+  {id:'probe', name:'PROBES', kind:'INSTRUMENT', title:'PROBE BAY',
+   sub:'Send instructions to the probes, then note the most drawn card suit.',
+   stats:[['PROBES','3'],['MOON-E','ACTIVE'],['TAU-E','DRIFTING'],['ALTITUDE','90°']],
+   text:'Probes report along the radial hyperspace line. Instructions are sent once per planning phase. Do not send them twice.'},
+  {id:'diary', name:'DIARY', kind:'RECORDING', title:'RECORDING.INI',
+   sub:'Write down whatever is asked of you. Be as brief or as lengthy as you like.',
+   stats:[['ENTRIES','41'],['MOON PHASE','WANING'],['VOICE','ENABLED'],['LAST PROMPT','ON THE NEXT PAGE']],
+   text:'You may also record your voice, instead of writing or in addition to it.'},
+  {id:'log', name:'LOG', kind:'CABOOSE', title:'STARDATE LOG',
+   sub:'The last car. Everything that happened, in order.',
+   stats:[['STARDATE','18.45.649'],['ENTRIES','212'],['LAST','BRAKE TEST — OK'],['STOVE','LIT']],
+   text:'Unit comm. matrix: ACTIVE. Cargo status: see car 02. Thank you for travelling with Happy Earth Corp.'}
+];
+
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const state = {align:'center', sel:0};
+const C = {ink:'#d6f25a', dim:'#7d8c35', faint:'#2c3313', bg:'#0a0c07'};
+const $ = s => document.querySelector(s);
+const stage=$('#stage'), train=$('#train'), panel=$('#panel');
+const cv=$('#land'), ctx=cv.getContext('2d');
+let carEls=[], couplers=[];
+let K=1; // train scale: shrinks to fit narrow stages
+let scroll=0, speed=0, surge=0, trainX=null, renderX=0, dtG=0;
+let W=0, H=0, dpr=1, hoverI=-1;
+const lightA=[], rotA=[], boost=[], jy=[], jv=[];
+const BASE=150; // px/s
+const railY=()=>H-44;
+// shape coordinates → stage coordinates
+const sx=(i,x)=>renderX+(carEls[i].offsetLeft+x)*K;
+const sy=y=>railY()-(80-y)*K;
+
+/* ───────── build the train ───────── */
+function buildTrain(){
+  train.innerHTML='';
+  CARS.forEach((c,i)=>{
+    const s=SHAPES[c.id];
+    if(i>0){ const cp=document.createElement('span'); cp.className='coupler'; train.appendChild(cp); }
+    const b=document.createElement('button');
+    b.className=`car t-${c.id}`+(i===state.sel?' sel':'');
+    b.dataset.i=i;
+    b.style.width=s.w+'px';
+    b.setAttribute('aria-label', `${c.name} — ${c.kind.toLowerCase()}`);
+    b.setAttribute('aria-current', i===state.sel?'page':'false');
+    b.innerHTML=`<svg width="${s.w}" height="80" viewBox="0 0 ${s.w} 80" aria-hidden="true">${s.svg}${s.wheels.map(wheel).join('')}${s.after||''}</svg>`+
+                `<span class="label" style="left:${s.label[0]}px;top:${s.label[1]}px">${c.name}</span>`;
+    train.appendChild(b);
+  });
+  carEls=[...train.querySelectorAll('.car')];
+  couplers=[...train.querySelectorAll('.coupler')];
+}
+
+/* ───────── interaction ───────── */
+let swapT=null;
+function select(i){
+  react(i);
+  ripple(i);
+  if(i===state.sel) return;
+  state.sel=i;
+  carEls.forEach((c,j)=>{ c.classList.toggle('sel', j===i); c.setAttribute('aria-current', j===i?'page':'false'); });
+  if(reduced){ renderPanel(); return; }
+  surge=1;
+  clearTimeout(swapT);
+  panel.querySelectorAll('.ln').forEach((el,k)=>{ el.style.animationDelay=(k*20)+'ms'; el.classList.add('leave'); });
+  swapT=setTimeout(renderPanel, 200);
+}
+// the pressed car dips and springs back; smaller bounces travel along the couplers
+function ripple(i){
+  couplers.forEach((cp,j)=>{
+    const d = j<i ? (i-1-j) : (j-i);   // coupler j sits between car j and j+1
+    setTimeout(()=>{ cp.classList.add('sq'); setTimeout(()=>cp.classList.remove('sq'),130); }, reduced?0:d*75);
+  });
+  if(reduced) return;
+  carEls.forEach((_,k)=>{ const d=Math.abs(k-i); setTimeout(()=>{ jv[k]=(jv[k]||0)+(d===0?150:70/d); }, d*75); });
+}
+// each car's own reaction to a tap
+function react(i){
+  if(reduced) return;
+  sparks(i);
+  const id=CARS[i].id, s=SHAPES[id];
+  if(id==='eng'){                                   // whistle: steam burst, headlamp flash, drivers spin up
+    for(let k=0;k<7;k++) setTimeout(()=>puff(sx(i,s.stack[0]), sy(s.stack[1]), {steam:true, r:5, vx:.35, vy:46+Math.random()*24, g:30, life:1.3+Math.random()*.5}), k*45);
+    beamFlash=1; boost[i]=3;
+  }
+  if(id==='probe'){ for(let k=0;k<3;k++) setTimeout(()=>ping(i), k*170); }
+  if(id==='log'){                                   // stove puffs a big burst
+    for(let k=0;k<8;k++) setTimeout(()=>puff(sx(i,s.pipe[0]), sy(s.pipe[1]), {r:6, vy:34+Math.random()*24, g:26+Math.random()*8, life:2.4+Math.random()}), k*55);
+  }
+}
+
+train.addEventListener('click', e=>{ const car=e.target.closest('.car'); if(car) select(+car.dataset.i); });
+train.addEventListener('keydown', e=>{
+  const car=e.target.closest('.car'); if(!car) return;
+  const i=+car.dataset.i;
+  if(e.key==='ArrowRight'||e.key==='ArrowLeft'){
+    e.preventDefault();
+    carEls[Math.max(0,Math.min(carEls.length-1, i+(e.key==='ArrowRight'?1:-1)))].focus();
+  }
+  if(e.key==='Enter'||e.key===' ') car.classList.add('pressing');
+});
+train.addEventListener('keyup', e=>{ const car=e.target.closest('.car'); if(car) car.classList.remove('pressing'); });
+train.addEventListener('pointerover', e=>{ const c=e.target.closest('.car'); hoverI=c?+c.dataset.i:-1; });
+train.addEventListener('pointerleave', ()=>{ hoverI=-1; });
+
+document.querySelectorAll('.seg[data-key]').forEach(seg=>{
+  seg.addEventListener('click', e=>{
+    const b=e.target.closest('button'); if(!b) return;
+    seg.querySelectorAll('button').forEach(x=>x.classList.toggle('on', x===b));
+    state[seg.dataset.key]=b.dataset.v;
+  });
+});
+
+/* ───────── main page ───────── */
+let typeTimer=null;
+function renderPanel(){
+  const c=CARS[state.sel], idx=String(state.sel).padStart(2,'0');
+  panel.innerHTML=`
+    <div class="bar"><span>CAR ${idx} // ${c.kind}</span><span>${state.sel+1}/${CARS.length}</span></div>
+    <div class="content">
+      <h1 class="ln" id="ttl"></h1>
+      <p class="ln sub">${c.sub}</p>
+      <div class="stats">${c.stats.map(([k,v])=>`<div class="ln stat"><span>${k}</span><b>${v}</b></div>`).join('')}</div>
+      <p class="ln body">${c.text}</p>
+    </div>`;
+  panel.querySelectorAll('.ln').forEach((el,k)=> el.style.animationDelay=(k*55)+'ms');
+  const ttl=$('#ttl'); let n=0; clearInterval(typeTimer);
+  typeTimer=setInterval(()=>{ n++; ttl.textContent=c.title.slice(0,n)+(n<c.title.length?'_':''); if(n>=c.title.length) clearInterval(typeTimer); }, reduced?0:26);
+}
+
+/* ───────── particles: smoke + steam, sparks, pings ───────── */
+const smoke=[], sparkList=[], rings=[];
+let smokeT=0, pingT=0, beamFlash=0, beamA=0;
+function puff(x,y,o={}){
+  const n=3+(Math.random()*2|0), lobes=[];
+  for(let k=0;k<n;k++) lobes.push([(Math.random()-.5)*1.2,(Math.random()-.5)*.8,.6+Math.random()*.5]);
+  smoke.push({x, y, r:(o.r||4)*K, age:0, life:o.life||3+Math.random()*1.4, lobes,
+    vx:o.vx??(.1+Math.random()*.08), vy:(o.vy||22+Math.random()*10)*K, g:(o.g||15+Math.random()*6)*K, steam:!!o.steam});
+}
+function sparks(i){
+  for(const wx of SHAPES[CARS[i].id].wheels){
+    for(let k=0;k<4;k++){
+      const a=Math.PI*(1.05+Math.random()*.5);                 // up and backward
+      const v=90+Math.random()*120;
+      sparkList.push({x:sx(i,wx), y:railY(), vx:Math.cos(a)*v*(Math.random()<.5?-1:1), vy:Math.sin(a)*v, age:0, life:.3+Math.random()*.25});
+    }
+  }
+}
+function ping(i){ const s=SHAPES.probe; rings.push({i, x:s.dish[0], y:s.dish[1], age:0, life:1}); }
+
+function update(dt){
+  // caboose stove: steady smoke
+  smokeT-=dt;
+  const cab=carEls.length-1;
+  if(cab>=0 && smokeT<=0 && !reduced){ puff(sx(cab,SHAPES.log.pipe[0]), sy(SHAPES.log.pipe[1])); smokeT=.18+Math.random()*.12; }
+  for(let k=smoke.length-1;k>=0;k--){
+    const p=smoke[k]; p.age+=dt;
+    p.x+=speed*p.vx*dt; p.y-=p.vy*dt*(1-p.age/p.life*.6); p.r+=p.g*dt*(1-p.age/p.life*.55);
+    if(p.age>p.life || p.x-p.r>W+40 || p.y+p.r<-20) smoke.splice(k,1);
+  }
+  for(let k=sparkList.length-1;k>=0;k--){
+    const p=sparkList[k]; p.age+=dt; p.vy+=600*dt; p.x+=(p.vx+speed*.6)*dt; p.y+=p.vy*dt;
+    if(p.age>p.life) sparkList.splice(k,1);
+  }
+  for(let k=rings.length-1;k>=0;k--){ rings[k].age+=dt; if(rings[k].age>rings[k].life) rings.splice(k,1); }
+  // the selected probe car keeps pinging
+  if(CARS[state.sel].id==='probe' && !reduced){ pingT-=dt; if(pingT<=0){ ping(state.sel); pingT=2.6; } } else pingT=1.2;
+  beamFlash=Math.max(0,beamFlash-dt*1.6);
+  const beamTarget=(CARS[state.sel].id==='eng'?.55:hoverI===0?.25:0)+beamFlash;
+  beamA+=(beamTarget-beamA)*Math.min(1,dt*6);
+}
+
+/* ───────── landscape ───────── */
+function rnd(i){ const x=Math.sin(i*127.1+311.7)*43758.5453; return x-Math.floor(x); }
+function noise(x){ const i=Math.floor(x), f=x-i, u=f*f*(3-2*f); return rnd(i)*(1-u)+rnd(i+1)*u; }
+function fbm(x){ return noise(x)*.6 + noise(x*2.3+10)*.3 + noise(x*5.1+40)*.1; }
+
+function resize(){
+  dpr=window.devicePixelRatio||1;
+  W=stage.clientWidth; H=stage.clientHeight;
+  cv.width=W*dpr; cv.height=H*dpr; ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+window.addEventListener('resize', resize);
+
+function pine(x,base,h,col){
+  ctx.strokeStyle=col; ctx.fillStyle=C.bg; ctx.lineWidth=2; ctx.lineJoin='round';
+  ctx.beginPath(); ctx.moveTo(x,base); ctx.lineTo(x,base-h*.18); ctx.stroke();
+  for(let t=0;t<3;t++){
+    const yb=base-h*.14-t*h*.24, yt=yb-h*.44, hw=h*.3*(1-t*.24);
+    ctx.beginPath(); ctx.moveTo(x-hw,yb); ctx.lineTo(x,yt); ctx.lineTo(x+hw,yb); ctx.closePath(); ctx.fill(); ctx.stroke();
+  }
+}
+function treeRow(p, spacing, base, hmin, hmax, density, col, seed){
+  const off=scroll*p, k0=Math.floor(-off/spacing)-2, k1=k0+Math.ceil(W/spacing)+4;
+  for(let k=k0;k<=k1;k++){
+    if(rnd(k*1.7+seed)>density) continue;
+    const x=k*spacing+off+rnd(k*3.1+seed)*spacing*.6;
+    pine(x, base, hmin+rnd(k*2.3+seed)*(hmax-hmin), col);
+    if(rnd(k*5.9+seed)<.35) pine(x+spacing*.28, base, (hmin+rnd(k*7.3+seed)*(hmax-hmin))*.7, col);
+  }
+}
+
+function draw(){
+  const ry=railY();
+  ctx.clearRect(0,0,W,H);
+  // far ridge
+  ctx.beginPath();
+  for(let x=0;x<=W+6;x+=6){ const y=ry-34-fbm((x-scroll*.06)*.004)*80; x?ctx.lineTo(x,y):ctx.moveTo(x,y); }
+  ctx.strokeStyle=C.faint; ctx.lineWidth=2; ctx.lineJoin='round'; ctx.stroke();
+  // tree lines
+  treeRow(.22, 34, ry-16, 14, 30, .55, C.faint, 11);
+  ctx.strokeStyle=C.faint; ctx.beginPath(); ctx.moveTo(0,ry-4); ctx.lineTo(W,ry-4); ctx.stroke();
+  treeRow(.5, 70, ry-4, 34, 70, .45, C.dim, 37);
+  // headlamp beam down the track
+  if(beamA>.01 && carEls[0]){
+    const lx=sx(0,SHAPES.eng.lamp[0]), ly=sy(SHAPES.eng.lamp[1]);
+    const g=ctx.createLinearGradient(lx,0,lx-380,0);
+    g.addColorStop(0,`rgba(214,242,90,${.22*Math.min(1.4,beamA)})`); g.addColorStop(1,'rgba(214,242,90,0)');
+    ctx.fillStyle=g; ctx.beginPath(); ctx.moveTo(lx,ly-3); ctx.lineTo(lx-380,ly-40); ctx.lineTo(lx-380,ry+30); ctx.lineTo(lx,ly+5); ctx.closePath(); ctx.fill();
+  }
+  // rail + ties
+  ctx.strokeStyle=C.ink; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(0,ry+1); ctx.lineTo(W,ry+1); ctx.stroke();
+  const tg=24, toff=((scroll%tg)+tg)%tg;
+  ctx.strokeStyle=C.dim;
+  ctx.beginPath(); for(let x=toff-tg;x<W+tg;x+=tg){ ctx.moveTo(x,ry+5); ctx.lineTo(x,ry+11); } ctx.stroke();
+  ctx.strokeStyle=C.faint; ctx.beginPath(); ctx.moveTo(0,ry+13); ctx.lineTo(W,ry+13); ctx.stroke();
+  // grass tufts and stones in front of the track
+  const gp=1.35, gs=46, goff=scroll*gp, g0=Math.floor(-goff/gs)-1;
+  ctx.lineWidth=1.5;
+  for(let k=g0;k<g0+Math.ceil(W/gs)+3;k++){
+    const v=rnd(k*4.1), x=k*gs+goff+v*gs, y=ry+22+rnd(k*8.3)*16;
+    if(v<.55){ ctx.strokeStyle=v<.2?C.dim:C.faint; ctx.beginPath(); ctx.moveTo(x-5,y-6); ctx.lineTo(x-2,y); ctx.lineTo(x,y-9); ctx.lineTo(x+2,y); ctx.lineTo(x+6,y-5); ctx.stroke(); }
+    else if(v<.7){ ctx.strokeStyle=C.faint; ctx.beginPath(); ctx.ellipse(x,y-2,5,3,0,Math.PI,0); ctx.stroke(); }
+  }
+  ctx.lineWidth=2;
+  // light under the selected / hovered car
+  carEls.forEach((car,i)=>{
+    const tgt = i===state.sel ? 1 : i===hoverI ? .45 : 0;
+    lightA[i]=(lightA[i]||0)+(tgt-(lightA[i]||0))*Math.min(1,dtG*8);
+    const a=lightA[i]; if(a<.01) return;
+    const cx=renderX+car.offsetLeft*K, w=car.offsetWidth*K;
+    const g=ctx.createLinearGradient(0,ry+3,0,ry+42);
+    g.addColorStop(0,`rgba(214,242,90,${.26*a})`); g.addColorStop(1,'rgba(214,242,90,0)');
+    ctx.fillStyle=g; ctx.beginPath(); ctx.moveTo(cx+6,ry+3); ctx.lineTo(cx+w-6,ry+3); ctx.lineTo(cx+w+8,ry+42); ctx.lineTo(cx-8,ry+42); ctx.closePath(); ctx.fill();
+  });
+  // brake sparks
+  ctx.strokeStyle=C.ink; ctx.lineWidth=1.5;
+  for(const p of sparkList){ ctx.globalAlpha=1-p.age/p.life; ctx.beginPath(); ctx.moveTo(p.x,p.y); ctx.lineTo(p.x-p.vx*.025,p.y-p.vy*.025); ctx.stroke(); }
+  ctx.globalAlpha=1;
+  // probe pings: rings rising from the dish
+  for(const r of rings){
+    if(!carEls[r.i]) continue;
+    const t=r.age/r.life, rad=(8+t*70)*K;
+    ctx.globalAlpha=1-t; ctx.strokeStyle=t<.4?C.ink:C.dim; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(sx(r.i,r.x), sy(r.y), rad, Math.PI*1.18, Math.PI*1.82); ctx.stroke();
+  }
+  ctx.globalAlpha=1;
+  // smoke + steam: oldest puffs first, so newer puffs billow over them
+  for(const p of smoke){
+    const t=p.age/p.life, col = p.steam ? (t<.5?C.ink:C.dim) : (t<.35?C.dim:C.faint);
+    for(const [ox,oy,rs] of p.lobes){
+      const r=p.r*rs;
+      ctx.beginPath(); ctx.arc(p.x+ox*p.r, p.y+oy*p.r, r+2, 0, Math.PI*2); ctx.fillStyle=col; ctx.fill();
+      ctx.beginPath(); ctx.arc(p.x+ox*p.r, p.y+oy*p.r, r, 0, Math.PI*2); ctx.fillStyle=C.bg; ctx.fill();
+    }
+  }
+}
+
+/* ───────── loop ───────── */
+let last=performance.now();
+function frame(now){
+  const dt=Math.min(.05,(now-last)/1000); last=now; dtG=dt;
+  surge=Math.max(0,surge-dt*.7);
+  const target=reduced?0:BASE+surge*200;
+  speed+=(target-speed)*Math.min(1,dt*1.6);
+  scroll+=speed*dt;
+
+  // where the train sits in frame
+  const m=W<700?16:40;
+  K=Math.min(1,(W-2*m)/train.offsetWidth);
+  const tw=train.offsetWidth*K;
+  const tx = state.align==='left' ? m
+           : state.align==='right' ? W-tw-m
+           : state.align==='center' ? (W-tw)/2
+           : W/2-(carEls[state.sel].offsetLeft+carEls[state.sel].offsetWidth/2)*K;
+  if(trainX===null) trainX=tx;
+  trainX+=(tx-trainX)*Math.min(1,dt*(reduced?60:3.2));
+  const x=trainX;
+  train.style.transform=`translateX(${x}px) scale(${K})`;
+  renderX=x;
+
+  const J=90;
+  carEls.forEach((car,i)=>{
+    // wheels (the loco's drivers spin up when it whistles), plus the side rod on its cranks
+    boost[i]=(boost[i]||0)*Math.exp(-dt*1.8);
+    rotA[i]=(rotA[i]||0)+speed*dt/7*(1+boost[i]);
+    const deg=-(rotA[i]*57.3)%360;
+    car.style.setProperty('--rot', deg+'deg');
+    if(i===0){ const r=deg*Math.PI/180; car.style.setProperty('--rx',(4*Math.sin(r))+'px'); car.style.setProperty('--ry',(-4*Math.cos(r))+'px'); }
+    // rail-joint bumps + press jolt
+    let b=0;
+    for(const wo of SHAPES[CARS[i].id].wheels){ const d=(((x+(car.offsetLeft+wo)*K-scroll)%J)+J)%J; b=Math.max(b,1-Math.min(d,J-d)/6); }
+    jv[i]=(jv[i]||0)+(-(jy[i]||0)*320-(jv[i]||0)*13)*dt; jy[i]=(jy[i]||0)+jv[i]*dt;
+    car.style.setProperty('--bump', ((speed<5?0:b*1.5)+jy[i])+'px');
+  });
+
+  update(dt);
+  draw();
+  requestAnimationFrame(frame);
+}
+
+
+/* ───────── spec sheet: every carriage, measured ───────── */
+function buildSpec(){
+  const L=10,T=34,R=46,B=46, tick=(x1,y1,x2,y2)=>`<path class="dim" d="M${x1} ${y1}L${x2} ${y2}"/>`;
+  const plates=CARS.map((c,i)=>{
+    const s=SHAPES[c.id], w=s.w, wl=s.wheels, wb=wl[wl.length-1]-wl[0];
+    const art=`${s.svg}${wl.map(wheel).join('')}${s.after||''}<text class="plabel" x="${s.label[0]}" y="${s.label[1]}" text-anchor="middle" dominant-baseline="central">${c.name}</text>`;
+    const d=[
+      // rail
+      `<path class="dim ext" d="M-6 80H${w+6}"/>`,
+      // overall width
+      `<path class="dim ext" d="M0 -22V-2M${w} -22V-2"/>`, tick(0,-16,w,-16), tick(0,-20,0,-12), tick(w,-20,w,-12),
+      `<text class="dimt" x="${w/2}" y="-21" text-anchor="middle">${w}</text>`,
+      // height
+      `<path class="dim ext" d="M${w+4} 0H${w+24}M${w+4} 80H${w+24}"/>`, tick(w+18,0,w+18,80), tick(w+14,0,w+22,0), tick(w+14,80,w+22,80),
+      `<text class="dimt" x="${w+26}" y="44">80</text>`,
+      // wheel centres + wheelbase
+      ...wl.map(x=>tick(x,84,x,92)),
+      tick(wl[0],100,wl[wl.length-1],100), tick(wl[0],96,wl[0],104), tick(wl[wl.length-1],96,wl[wl.length-1],104),
+      `<text class="dimt" x="${(wl[0]+wl[wl.length-1])/2}" y="114" text-anchor="middle">WB ${wb}</text>`,
+      // label anchor
+      `<path class="anchor" d="M${s.label[0]-4} ${s.label[1]-11}h8M${s.label[0]} ${s.label[1]-15}v8"/>`
+    ].join('');
+    return `<figure class="plate">
+      <div class="cap"><b>${String(i+1).padStart(2,'0')} ${c.name}</b><span>${c.kind}</span></div>
+      <svg viewBox="${-L} ${-T} ${w+L+R} ${80+T+B}" style="width:${w+L+R}px" role="img" aria-label="${c.name}, ${w} by 80 pixels">${art}${d}</svg>
+      <dl><dt>BOX</dt><dd>${w} &times; 80 px</dd>
+          <dt>WHEELS</dt><dd>${wl.length} &times; &Oslash;14 @ x ${wl.join(' / ')}</dd>
+          <dt>LABEL</dt><dd>centre ${s.label[0]}, ${s.label[1]}</dd></dl>
+    </figure>`;
+  }).join('');
+  const total=CARS.reduce((a,c)=>a+SHAPES[c.id].w,0)+10*(CARS.length-1);
+  const sys=[['CAR HEIGHT','80 px'],['TRAIN LENGTH',`${total} px`],['WHEEL','&Oslash;14 &middot; centre y73'],['COUPLER','10&times;2 &rarr; 3 pressed'],
+    ['RAIL','44 px above stage floor'],['STAGE','210 px tall'],['STROKE','2 px &middot; detail 1.5'],['LABEL','Space Mono 700 13 / .12em'],
+    ['HOVER','lift &minus;6 px'],['PRESS','jolt +2, ripple 75 ms/car'],['SCALE','min(1, stage &minus; 2&times;margin / length)'],['MARGIN','40 px &middot; 16 below 700']];
+  spec.innerHTML=`<h2><b>SPEC // CARRIAGE DIMENSIONS</b><span>UNITS: PX &middot; DRAWN 1:1</span></h2>
+    <div class="plates">${plates}</div>
+    <h2><b>SYSTEM</b><span>SHARED BY EVERY CAR</span></h2>
+    <div class="stats">${sys.map(([k,v])=>`<div class="stat"><span>${k}</span><b style="font-size:13px">${v}</b></div>`).join('')}</div>`;
+}
+const spec=$('#spec');
+resize();
+buildTrain();
+buildSpec();
+renderPanel();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
