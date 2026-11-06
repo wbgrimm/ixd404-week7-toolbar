@@ -32,6 +32,11 @@ header{display:flex;justify-content:space-between;align-items:center;gap:16px;fl
 /* ── main page: the inside of the selected car ── */
 main{flex:1;min-height:0;overflow:auto;padding:28px 24px;display:flex;flex-direction:column}
 .panel{border:2px solid var(--ink);max-width:900px;width:100%;flex:1 0 auto}
+.panel.grow{overflow:hidden;transition:height .5s cubic-bezier(.3,.1,.2,1)}
+/* title types in over a hidden copy of itself, so it never changes the box height */
+.panel h1{display:grid}
+.panel h1>span{grid-area:1/1}
+.panel h1 .full{visibility:hidden}
 .panel .bar{background:var(--ink);color:var(--bg);font-weight:700;padding:4px 10px;display:flex;justify-content:space-between;font-size:12px;letter-spacing:.1em}
 .panel .content{padding:20px 22px 24px;display:grid;gap:16px}
 .panel h1{font-size:34px;letter-spacing:.04em;line-height:1.1;min-height:1.1em}
@@ -310,6 +315,7 @@ function select(i){
   surge=1;
   clearTimeout(swapT);
   panel.querySelectorAll('.ln').forEach((el,k)=>{ el.style.animationDelay=(k*20)+'ms'; el.classList.add('leave'); });
+  easeHeight(measurePanel());
   swapT=setTimeout(renderPanel, 200);
 }
 // the pressed car dips and springs back; smaller bounces travel along the couplers
@@ -360,16 +366,35 @@ document.querySelectorAll('.seg[data-key]').forEach(seg=>{
 
 /* ───────── main page ───────── */
 let typeTimer=null;
-function renderPanel(){
+// the box eases to the next car's height from the moment you click, instead of snapping when the text swaps
+function measurePanel(){
+  const m=panel.cloneNode(false);
+  m.removeAttribute('id'); m.className='panel'; m.style.cssText=`position:absolute;visibility:hidden;height:auto;width:${panel.offsetWidth}px;flex:none`;
+  m.innerHTML=panelHTML();
+  panel.parentNode.appendChild(m);
+  const h=m.offsetHeight; m.remove(); return h;
+}
+let growT=null;
+function easeHeight(h){
+  clearTimeout(growT);
+  panel.style.height=panel.offsetHeight+'px'; void panel.offsetHeight;
+  panel.classList.add('grow'); panel.style.height=h+'px';
+  growT=setTimeout(()=>{ panel.classList.remove('grow'); panel.style.height=''; }, 560);
+}
+function panelHTML(){
   const c=CARS[state.sel], idx=String(state.sel).padStart(2,'0');
-  panel.innerHTML=`
+  return `
     <div class="bar"><span>CAR ${idx} // ${c.kind}</span><span>${state.sel+1}/${CARS.length}</span></div>
     <div class="content">
-      <h1 class="ln" id="ttl"></h1>
+      <h1 class="ln"><span class="full" aria-hidden="true">${c.title}</span><span id="ttl"></span></h1>
       <p class="ln sub">${c.sub}</p>
       <div class="stats">${c.stats.map(([k,v])=>`<div class="ln stat"><span>${k}</span><b>${v}</b></div>`).join('')}</div>
       <p class="ln body">${c.text}</p>
     </div>`;
+}
+function renderPanel(){
+  const c=CARS[state.sel];
+  panel.innerHTML=panelHTML();
   panel.querySelectorAll('.ln').forEach((el,k)=> el.style.animationDelay=(k*55)+'ms');
   const ttl=$('#ttl'); let n=0; clearInterval(typeTimer);
   typeTimer=setInterval(()=>{ n++; ttl.textContent=c.title.slice(0,n)+(n<c.title.length?'_':''); if(n>=c.title.length) clearInterval(typeTimer); }, reduced?0:26);
