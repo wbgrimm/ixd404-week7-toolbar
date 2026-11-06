@@ -34,6 +34,12 @@ main{flex:1;min-height:0;overflow:auto;padding:28px 24px 8px;display:flex;flex-d
   border:var(--bw) solid var(--edge);border-radius:var(--prad);padding:28px 30px 30px;display:grid;gap:16px}
 .panel::before{content:'';position:absolute;inset:6px;border:var(--fw) var(--fs) var(--fc);opacity:.45;border-radius:max(0px,calc(var(--prad) - 5px));pointer-events:none}
 .panel.away{visibility:hidden}
+.panel.away .ln{animation:none}
+.panel.grow{transition:height .7s cubic-bezier(.35,.1,.2,1) .16s}
+/* title types in over a hidden copy of itself, so it never changes the box height */
+.panel h1{display:grid}
+.panel h1>span{grid-area:1/1}
+.panel h1 .full{visibility:hidden}
 .phead{display:flex;justify-content:space-between;font-size:11px;letter-spacing:.14em;color:var(--sc);font-weight:700}
 /* playing-card details on the info box: a big watermark pip and the mirrored corner index */
 .pip{position:absolute;right:34px;bottom:-34px;font-size:220px;line-height:1;color:var(--sc);opacity:.07;pointer-events:none}
@@ -238,19 +244,25 @@ function play(i){
   const prev=state.sel; state.sel=i;
   if(reduced){ cards[prev].classList.remove('out'); cards[i].classList.add('out'); hoverI=-1; layout(); renderPanel(); return; }
   busy=true;
-  const table=panel.getBoundingClientRect();
+  const old=panel.getBoundingClientRect();
   const from=restPose(cards[i]);
+
+  // lay out the new card's content now (hidden) so the box knows its final size,
+  // then ease the box from its old height to the new one while the card is in the air
+  renderPanel(false); panel.classList.add('away');
+  const table=panel.getBoundingClientRect();
+  panel.style.height=old.height+'px'; void panel.offsetHeight;
+  panel.classList.add('grow'); panel.style.height=table.height+'px';
 
   // the clicked card leaves the hand; the previous one comes back into it
   hoverI=-1;
   cards[i].classList.add('out');
   cards[prev].classList.remove('out'); cards[prev].classList.add('arriving');
   layout();
-  panel.classList.add('away');
 
   // previous card: the info box flips back over into a card and returns to its slot
   const back=flyer(prev);
-  back.animate([atTable(table,180), atCard(restPose(cards[prev]),360)], {duration:540, easing:'cubic-bezier(.45,0,.25,1)', fill:'forwards'})
+  back.animate([atTable(old,180), atCard(restPose(cards[prev]),360)], {duration:540, easing:'cubic-bezier(.45,0,.25,1)', fill:'forwards'})
       .onfinish=()=>{ back.remove(); cards[prev].classList.remove('arriving'); };
 
   // new card: lifts out of the hand, flies up and flips over into the info box
@@ -260,24 +272,28 @@ function play(i){
     {left:(from.x-CW/2)+'px', top:(from.y-CH/2-70)+'px', width:CW+'px', height:CH+'px', transform:`${P} rotate(${from.a*.4}deg) rotateY(0deg)`, offset:.2},
     {...atTable(table,180), offset:1}
   ], {duration:700, delay:160, easing:'cubic-bezier(.35,.1,.2,1)', fill:'both'})
-    .onfinish=()=>{ renderPanel(); panel.classList.remove('away'); up.remove(); busy=false; };
+    .onfinish=()=>{ panel.classList.remove('grow','away'); panel.style.height=''; typeTitle(); up.remove(); busy=false; };
 }
 
 /* ───────── table ───────── */
 let typeTimer=null;
-function renderPanel(){
+function renderPanel(type=true){
   const c=CARDS[state.sel], pip=PIP[c.suit];
   panel.className=`panel s-${c.suit}`;
   panel.innerHTML=`
     <span class="pip" aria-hidden="true">${pip}</span>
     <span class="corner" aria-hidden="true">${c.rank}<br>${pip}</span>
     <div class="phead ln"><span>${idx(state.sel)} // ${c.name}</span><span>${c.rank} OF ${c.suit.toUpperCase()}</span></div>
-    <h1 class="ln" id="ttl"></h1>
+    <h1 class="ln"><span class="full" aria-hidden="true">${c.title}</span><span id="ttl"></span></h1>
     <p class="ln sub">${c.sub}</p>
     <div class="stats">${c.stats.map(([k,v,r])=>`<div class="ln stat"><span>${k}</span><b class="${r||''}">${v}</b></div>`).join('')}</div>
     <p class="ln body">${c.text}</p>`;
   panel.querySelectorAll('.ln').forEach((el,k)=> el.style.animationDelay=(k*45)+'ms');
-  const ttl=$('#ttl'); let n=0; clearInterval(typeTimer);
+  clearInterval(typeTimer);
+  if(type) typeTitle();
+}
+function typeTitle(){
+  const c=CARDS[state.sel], ttl=$('#ttl'); let n=0; clearInterval(typeTimer);
   typeTimer=setInterval(()=>{ n++; ttl.textContent=c.title.slice(0,n)+(n<c.title.length?'_':''); if(n>=c.title.length) clearInterval(typeTimer); }, reduced?0:22);
 }
 
